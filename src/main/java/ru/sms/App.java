@@ -88,9 +88,9 @@ public class App {
 
     private static PdfSigner getSigner(PdfReader pdfReader) throws IOException {
         PdfSigner signer;
-        final PdfSignature dic = new PdfSignature(PdfName.ADOBE_CryptoProPDF, PdfName.Adbe_pkcs7_detached);
+//        final PdfSignature dic = new PdfSignature(PdfName.ADOBE_CryptoProPDF, PdfName.Adbe_pkcs7_detached);
         FileOutputStream outputStream = new FileOutputStream(OUTPUT_FILE_NAME);
-        signer = new PdfSigner(pdfReader, outputStream, new StampingProperties().useAppendMode(), dic);
+        signer = new PdfSigner(pdfReader, outputStream, new StampingProperties().useAppendMode());
         signer.setCertificationLevel(PdfSigner.CERTIFIED_NO_CHANGES_ALLOWED);
         signer.setSignDate(DateTimeUtil.getCurrentTimeCalendar());
         setAppearance(signer);
