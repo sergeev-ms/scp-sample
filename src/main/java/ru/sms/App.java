@@ -1,19 +1,19 @@
 package ru.sms;
 
-import com.itextpdf.io.util.DateTimeUtil;
-import com.itextpdf.kernel.geom.Rectangle;
-import com.itextpdf.kernel.pdf.PdfName;
-import com.itextpdf.kernel.pdf.PdfReader;
-import com.itextpdf.kernel.pdf.StampingProperties;
-import com.itextpdf.signatures.*;
+import com.itextpdf.text.pdf.*;
+import com.itextpdf.text.pdf.security.DigestAlgorithms;
+import com.itextpdf.text.pdf.security.MakeSignature;
+import com.itextpdf.text.pdf.security.PdfPKCS7;
 import com.sun.istack.internal.Nullable;
 import ru.CryptoPro.JCP.JCP;
 
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.util.Calendar;
 import java.util.HashMap;
 
 /**
@@ -28,10 +28,8 @@ public class App {
     private static final String OUTPUT_FILE_NAME = "C:/Temp/itext_out.pdf";
     private static final String REASON = "REASON_R";
     private static final String LOCATION = "LOCATION_L";
-    private static final String CONTACT = "CONTACT_C";
-    private static Certificate[] chain;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
 
         KeyStore keyStore = getKeyStore();
         if (keyStore == null) {
@@ -39,7 +37,8 @@ public class App {
         }
         String alias = getAlias(keyStore);
         PrivateKey key = getKey(keyStore, alias);
-        chain = getChain(keyStore, alias);
+        //    private static final String CONTACT = "CONTACT_C";
+        Certificate[] chain = getChain(keyStore, alias);
         if (key == null || chain == null) {
             return;
         }
@@ -56,57 +55,79 @@ public class App {
         if (hashAlgorithm == null)
             return;
 
-        final PrivateKeySignature signature = new PrivateKeySignature(key, hashAlgorithm, JCP.PROVIDER_NAME);
-
-        PdfReader pdfReader = getPdfReader();
-        if (pdfReader == null)
-            return;
-
-        final PdfSigner signer = getSigner(pdfReader);
-
-        try {
-            signer.signDetached(new BouncyCastleDigest(), signature, chain, null, null, null, 0, PdfSigner.CryptoStandard.CADES);
-            System.out.println("Done");
-        } catch (GeneralSecurityException e) {
-            e.printStackTrace();
-        }
+        sign(key, hashAlgorithm, JCP.PROVIDER_NAME, chain, INPUT_FILE_NAME, OUTPUT_FILE_NAME,
+                LOCATION, REASON, true);
 
     }
 
-    private static void setAppearance(PdfSigner signer) {
-        PdfSignatureAppearance appearance = signer.getSignatureAppearance();
-        appearance.setLayer2FontSize(13.8f)
-                .setPageRect(new Rectangle(36, 548, 250, 150))
-                .setPageNumber(1)
-                .setReason(REASON)
-                .setLocation(LOCATION)
-                .setContact(CONTACT)
-                .setCertificate(chain[0])
-                .setRenderingMode(PdfSignatureAppearance.RenderingMode.NAME_AND_DESCRIPTION);
+    public static void sign(PrivateKey privateKey, String hashAlgorithm,
+                            String signProvider, Certificate[] chain, String fileToSign,
+                            String signedFile, String location, String reason, boolean append)
+            throws Exception {
+
+        PdfReader reader = new PdfReader(fileToSign);
+        FileOutputStream fout = new FileOutputStream(signedFile);
+
+        PdfStamper stp = append
+                ? PdfStamper.createSignature(reader, fout, '\0', null, true)
+                : PdfStamper.createSignature(reader, fout, '\0');
+
+        PdfSignatureAppearance sap = stp.getSignatureAppearance();
+
+        sap.setCertificate(chain[0]);
+        sap.setReason(reason);
+        sap.setLocation(location);
+
+        PdfSignature dic = new PdfSignature(PdfName.ADOBE_CryptoProPDF,
+                PdfName.ADBE_PKCS7_DETACHED);
+
+        dic.setReason(sap.getReason());
+        dic.setLocation(sap.getLocation());
+        dic.setSignatureCreator(sap.getSignatureCreator());
+        dic.setContact(sap.getContact());
+        dic.setDate(new PdfDate(sap.getSignDate())); // time-stamp will over-rule this
+
+        sap.setCryptoDictionary(dic);
+        int estimatedSize = 8192;
+
+        HashMap<PdfName, Integer> exc = new HashMap<>();
+        exc.put(PdfName.CONTENTS, estimatedSize * 2 + 2);
+
+        sap.preClose(exc);
+
+        PdfPKCS7 sgn = new PdfPKCS7(privateKey, chain,
+                hashAlgorithm, signProvider, null, false);
+
+        InputStream data = sap.getRangeStream();
+
+        MessageDigest md = MessageDigest.getInstance(hashAlgorithm);
+        byte[] hash = DigestAlgorithms.digest(data, md);
+
+        Calendar cal = Calendar.getInstance();
+
+        byte[] sh = sgn.getAuthenticatedAttributeBytes(hash, cal,
+                null, null, MakeSignature.CryptoStandard.CMS);
+
+        sgn.update(sh, 0, sh.length);
+        byte[] encodedSig = sgn.getEncodedPKCS7(hash, cal);
+
+        if (estimatedSize < encodedSig.length) {
+            throw new IOException("Not enough space");
+        } // if
+
+        byte[] paddedSig = new byte[estimatedSize];
+        System.arraycopy(encodedSig, 0, paddedSig, 0, encodedSig.length);
+
+        PdfDictionary dic2 = new PdfDictionary();
+        dic2.put(PdfName.CONTENTS, new PdfString(paddedSig).setHexWriting(true));
+
+        sap.close(dic2);
+        stp.close();
+
+        fout.close();
+        reader.close();
 
     }
-
-    private static PdfSigner getSigner(PdfReader pdfReader) throws IOException {
-        PdfSigner signer;
-//        final PdfSignature dic = new PdfSignature(PdfName.ADOBE_CryptoProPDF, PdfName.Adbe_pkcs7_detached);
-        FileOutputStream outputStream = new FileOutputStream(OUTPUT_FILE_NAME);
-        signer = new PdfSigner(pdfReader, outputStream, new StampingProperties().useAppendMode());
-        signer.setCertificationLevel(PdfSigner.CERTIFIED_NO_CHANGES_ALLOWED);
-        signer.setSignDate(DateTimeUtil.getCurrentTimeCalendar());
-        setAppearance(signer);
-        return signer;
-    }
-
-    private static PdfReader getPdfReader() {
-        PdfReader pdfReader = null;
-        try {
-            pdfReader = new PdfReader(INPUT_FILE_NAME);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return pdfReader;
-    }
-
 
     private static Certificate[] getChain(KeyStore keyStore, String alias) {
         Certificate[] chain = null;

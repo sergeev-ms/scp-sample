@@ -38,8 +38,8 @@
     </dependency>
     <dependency>
       <groupId>com.itextpdf</groupId>
-      <artifactId>sign</artifactId>
-      <version>7.1.6.1-SNAPSHOT</version>
+      <artifactId>itextpdf</artifactId>
+      <version>5.5.5-GOST</version>
     </dependency>
     <!-- https://mvnrepository.com/artifact/org.bouncycastle/bcprov-jdk15on -->
     <dependency>
