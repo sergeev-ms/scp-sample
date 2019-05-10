@@ -4,7 +4,6 @@ import com.itextpdf.text.pdf.*;
 import com.itextpdf.text.pdf.security.DigestAlgorithms;
 import com.itextpdf.text.pdf.security.MakeSignature;
 import com.itextpdf.text.pdf.security.PdfPKCS7;
-import com.sun.istack.internal.Nullable;
 import ru.CryptoPro.JCP.JCP;
 
 import java.io.FileOutputStream;
@@ -151,7 +150,6 @@ public class App {
         }
     }
 
-    @Nullable
     private static PrivateKey getKey(KeyStore keyStore, String alias) {
         try {
             return (PrivateKey) keyStore.getKey(alias, PASSWORD);
